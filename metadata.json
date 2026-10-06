@@ -1,0 +1,6 @@
+{
+  "name": "RE:SET — Know Yourself. Fix Yourself. Become Better.",
+  "description": "Daily self-reflection, behavioral pattern detection, and personal growth operating system with brutal honesty mode and life dashboard.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
