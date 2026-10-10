@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import {
   DailyBiometrics,
   DailyReflection,
+  DailyTask,
   DetectedPattern,
   FutureMeGoals,
   MemoryItem,
@@ -39,6 +40,11 @@ interface AppContextType {
   getBiometricsForDate: (date: string) => DailyBiometrics;
   saveBiometricsForDate: (entry: DailyBiometrics) => void;
   updateBiometrics: (updates: Partial<DailyBiometrics>) => void;
+  tasks: DailyTask[];
+  addTask: (title: string, category?: DailyTask['category'], date?: string) => void;
+  updateTaskStatus: (id: string, status: 'pending' | 'completed' | 'failed', failureReason?: string) => void;
+  deleteTask: (id: string) => void;
+  getTasksForDate: (date: string) => DailyTask[];
   activeTab: NavigationTab;
   streaks: StreakData;
   setActiveTab: (tab: NavigationTab) => void;
@@ -73,7 +79,47 @@ const STORAGE_KEYS = {
   MEMORIES: 'reset_app_memories',
   BIOMETRICS: 'reset_app_biometrics',
   BIOMETRICS_HISTORY: 'reset_app_biometrics_history',
+  TASKS: 'reset_app_daily_tasks',
 };
+
+const getDefaultTasksForDate = (date: string): DailyTask[] => [
+  {
+    id: `task-1-${date}`,
+    title: '3-Hour Deep Work Block (Zero Distractions / Phone Locked)',
+    category: 'deep-work',
+    status: 'completed',
+    date,
+  },
+  {
+    id: `task-2-${date}`,
+    title: 'Heavy Training Session / 5km Run (Zero Excuses)',
+    category: 'fitness',
+    status: 'failed',
+    failureReason: 'Surrendered to mental friction and skipped workout.',
+    date,
+  },
+  {
+    id: `task-3-${date}`,
+    title: 'Strict Clean Nutrition & Zero Added Sugar',
+    category: 'health',
+    status: 'completed',
+    date,
+  },
+  {
+    id: `task-4-${date}`,
+    title: 'Read 30 Mins High-Density Text (Handwritten Notes)',
+    category: 'learning',
+    status: 'pending',
+    date,
+  },
+  {
+    id: `task-5-${date}`,
+    title: 'Daily Progress Video Recorded & Evening Audit',
+    category: 'discipline',
+    status: 'pending',
+    date,
+  },
+];
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [profile, setProfileState] = useState<UserProfile>(() => {
@@ -172,6 +218,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
+  const [tasks, setTasksState] = useState<DailyTask[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.TASKS);
+      if (saved) return JSON.parse(saved);
+      const today = new Date().toISOString().split('T')[0];
+      return getDefaultTasksForDate(today);
+    } catch {
+      const today = new Date().toISOString().split('T')[0];
+      return getDefaultTasksForDate(today);
+    }
+  });
+
   const [activeTab, setActiveTab] = useState<NavigationTab>('home');
 
   // Sync to localStorage
@@ -187,10 +245,65 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localStorage.setItem(STORAGE_KEYS.MEMORIES, JSON.stringify(memories));
       localStorage.setItem(STORAGE_KEYS.BIOMETRICS, JSON.stringify(biometrics));
       localStorage.setItem(STORAGE_KEYS.BIOMETRICS_HISTORY, JSON.stringify(biometricsHistory));
+      localStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(tasks));
     } catch (e) {
       console.warn('Storage sync error:', e);
     }
-  }, [profile, reflections, patterns, weeklyReview, monthlyAudit, mirror, futureGoals, memories, biometrics, biometricsHistory]);
+  }, [profile, reflections, patterns, weeklyReview, monthlyAudit, mirror, futureGoals, memories, biometrics, biometricsHistory, tasks]);
+
+  const addTask = (title: string, category: DailyTask['category'] = 'custom', date?: string) => {
+    const taskDate = date || new Date().toISOString().split('T')[0];
+    const newTask: DailyTask = {
+      id: `task-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      title: title.trim(),
+      category,
+      status: 'pending',
+      date: taskDate,
+    };
+    setTasksState((prev) => [newTask, ...prev]);
+  };
+
+  const updateTaskStatus = (id: string, status: 'pending' | 'completed' | 'failed', failureReason?: string) => {
+    setTasksState((prev) => {
+      const exists = prev.some((t) => t.id === id);
+      if (exists) {
+        return prev.map((t) => (t.id === id ? { ...t, status, failureReason: failureReason || t.failureReason } : t));
+      }
+      // If task was from default virtual set for a date
+      const dateMatch = id.match(/task-\d+-(.+)$/);
+      if (dateMatch) {
+        const date = dateMatch[1];
+        const defaults = getDefaultTasksForDate(date);
+        const updated = defaults.map((t) =>
+          t.id === id ? { ...t, status, failureReason: failureReason || t.failureReason } : t
+        );
+        return [...updated, ...prev];
+      }
+      return prev;
+    });
+  };
+
+  const deleteTask = (id: string) => {
+    setTasksState((prev) => {
+      const exists = prev.some((t) => t.id === id);
+      if (exists) {
+        return prev.filter((t) => t.id !== id);
+      }
+      const dateMatch = id.match(/task-\d+-(.+)$/);
+      if (dateMatch) {
+        const date = dateMatch[1];
+        const defaults = getDefaultTasksForDate(date).filter((t) => t.id !== id);
+        return [...defaults, ...prev];
+      }
+      return prev;
+    });
+  };
+
+  const getTasksForDate = (date: string): DailyTask[] => {
+    const matching = tasks.filter((t) => t.date === date);
+    if (matching.length > 0) return matching;
+    return getDefaultTasksForDate(date);
+  };
 
   const updateProfile = (updates: Partial<UserProfile>) => {
     setProfileState((prev) => ({ ...prev, ...updates }));
@@ -405,6 +518,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         getBiometricsForDate,
         saveBiometricsForDate,
         updateBiometrics,
+        tasks,
+        addTask,
+        updateTaskStatus,
+        deleteTask,
+        getTasksForDate,
         activeTab,
         streaks,
         setActiveTab,

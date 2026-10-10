@@ -4,30 +4,30 @@ import {
   ArrowRight, 
   Flame, 
   Sparkles, 
-  ShieldCheck, 
-  Dumbbell, 
   Moon, 
-  Brain, 
-  Users, 
-  TrendingUp, 
-  PhoneOff, 
+  Activity, 
+  ShieldCheck, 
   Focus, 
   Zap, 
-  Clock,
+  Clock, 
+  CheckCircle2, 
+  Calendar, 
+  ChevronLeft, 
+  ChevronRight, 
+  Check, 
   AlertTriangle,
-  CheckCircle2,
-  Activity,
-  Heart,
-  BatteryCharging,
-  Calendar,
-  ChevronLeft,
-  ChevronRight,
-  Check,
   RotateCcw,
   Video,
-  MessageSquare
+  MessageSquare,
+  Target,
+  Briefcase,
+  Code2,
+  Play
 } from 'lucide-react';
-import { getVideoByDateFromVault, StoredVideoRecord } from '../utils/videoStorage';
+import { DynamicBiometricWave } from './DynamicBiometricWave';
+import { DailyTasksAudit } from './DailyTasksAudit';
+import { DailyProgressVideoSection } from './DailyProgressVideoSection';
+import { ReflectFlow } from './ReflectFlow';
 
 export const HomeView: React.FC = () => {
   const { 
@@ -38,17 +38,65 @@ export const HomeView: React.FC = () => {
     patterns, 
     biometrics, 
     getBiometricsForDate, 
-    saveBiometricsForDate 
+    saveBiometricsForDate,
+    tasks,
+    getTasksForDate
   } = useApp();
 
   const todayStr = new Date().toISOString().split('T')[0];
   const [selectedDate, setSelectedDate] = useState<string>(biometrics?.date || todayStr);
   const [justSaved, setJustSaved] = useState<boolean>(false);
-  const [todayVideo, setTodayVideo] = useState<StoredVideoRecord | null>(null);
+  const [showReflectModal, setShowReflectModal] = useState<boolean>(false);
+
+  // Switch Company 7-8h Study Metrics
+  const [studyHoursToday, setStudyHoursToday] = useState<number>(4.5);
+  const [targetStudyHours, setTargetStudyHours] = useState<number>(8.0);
+  const [isSwitchTimerActive, setIsSwitchTimerActive] = useState<boolean>(false);
 
   useEffect(() => {
-    getVideoByDateFromVault(todayStr).then((vid) => setTodayVideo(vid));
+    const updateSwitchMetrics = () => {
+      try {
+        const savedGoal = localStorage.getItem('sc_daily_goal_hours');
+        if (savedGoal) {
+          setTargetStudyHours(Number(savedGoal));
+        }
+
+        const activeTimer = localStorage.getItem('sc_active_timer');
+        let isRunning = false;
+        let extraSec = 0;
+        if (activeTimer) {
+          const parsed = JSON.parse(activeTimer);
+          if (parsed.status === 'running' && parsed.startTimestamp) {
+            isRunning = true;
+            extraSec = Math.floor((Date.now() - parsed.startTimestamp) / 1000) + (parsed.elapsedBeforePause || 0);
+          } else if (parsed.status === 'paused') {
+            extraSec = parsed.elapsedBeforePause || 0;
+          }
+        }
+        setIsSwitchTimerActive(isRunning);
+
+        const savedSessions = localStorage.getItem('sc_study_sessions');
+        let totalSec = 0;
+        if (savedSessions) {
+          const sessions = JSON.parse(savedSessions);
+          const todays = sessions.filter((s: any) => s.dateStr === todayStr);
+          totalSec = todays.reduce((acc: number, s: any) => acc + (s.durationSeconds || 0), 0);
+        } else {
+          totalSec = 16500; // 4h 35m default demo
+        }
+
+        totalSec += extraSec;
+        setStudyHoursToday(Number((totalSec / 3600).toFixed(1)));
+      } catch {
+        // fallback
+      }
+    };
+
+    updateSwitchMetrics();
+    const interval = setInterval(updateSwitchMetrics, 2000);
+    return () => clearInterval(interval);
   }, [todayStr]);
+
 
   // Active biometrics for the selected date
   const activeBiometrics = getBiometricsForDate ? getBiometricsForDate(selectedDate) : biometrics;
@@ -64,7 +112,7 @@ export const HomeView: React.FC = () => {
       setLocalRecoveryPercentage(entry.recoveryPercentage);
       setLocalSleepHours(entry.sleepHours ?? 7.5);
     }
-  }, [selectedDate]);
+  }, [selectedDate, getBiometricsForDate]);
 
   const handleUpdate = (updates: { sleep?: number; recovery?: number; hours?: number }) => {
     const sleep = updates.sleep !== undefined ? updates.sleep : localSleepPercentage;
@@ -93,120 +141,48 @@ export const HomeView: React.FC = () => {
     setSelectedDate(newDateStr);
   };
 
-  // Dynamic greeting based on current local hour
-  const currentHour = new Date().getHours();
-  let greetingTime = 'evening';
-  if (currentHour >= 5 && currentHour < 12) {
-    greetingTime = 'morning';
-  } else if (currentHour >= 12 && currentHour < 18) {
-    greetingTime = 'afternoon';
-  }
-
   const scores = todayReflection?.verdict?.scores;
   const overallScore = scores?.overall?.score ?? 82;
   const tomorrowPlan = todayReflection?.verdict?.tomorrowPlan;
   const recentPattern = patterns[0];
 
-  // Strongest and weakest areas calculation
-  const scoreEntries = scores ? [
-    { name: 'Discipline', score: scores.discipline.score },
-    { name: 'Focus', score: scores.focus.score },
-    { name: 'Health', score: scores.health.score },
-    { name: 'Learning', score: scores.learning.score },
-    { name: 'Relationships', score: scores.relationships.score },
-    { name: 'Mood', score: scores.mood.score },
-  ].sort((a, b) => b.score - a.score) : [];
-
-  const strongestArea = scoreEntries.length > 0 ? scoreEntries[0].name.toLowerCase() : 'health';
-  const weakestArea = scoreEntries.length > 0 ? scoreEntries[scoreEntries.length - 1].name.toLowerCase() : 'focus';
+  // Tasks statistics for the selected date
+  const dateTasks = getTasksForDate ? getTasksForDate(selectedDate) : tasks.filter((t) => t.date === selectedDate);
+  const completedTasks = dateTasks.filter((t) => t.status === 'completed').length;
+  const failedTasks = dateTasks.filter((t) => t.status === 'failed').length;
+  const totalTasks = dateTasks.length;
+  const executionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
   return (
-    <div className="space-y-8 pb-12">
-      {/* 1. Greeting & Hero Header */}
-      <div className="relative overflow-hidden rounded-2xl bg-neutral-900/60 border border-neutral-800 p-6 sm:p-8 lg:p-10">
-        <div className="relative z-10 max-w-3xl space-y-4">
-          <div className="flex items-center gap-2 text-xs font-mono tracking-wider text-neutral-300 uppercase">
-            <span>Daily Audit</span>
-            <span aria-hidden="true">·</span>
-            <span>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</span>
-            <span aria-hidden="true">·</span>
-            <span className={profile.mode === 'brutal' ? 'text-amber-400 font-bold' : 'text-neutral-300 font-medium'}>
-              {profile.mode === 'brutal' ? 'Brutal Honesty Mode' : 'Normal Mode'}
-            </span>
-          </div>
-
-          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-neutral-100 font-display">
-            Good {greetingTime}, {profile.name || 'Seeker'}.<br />
-            <span className="text-neutral-400 font-normal">Let’s see who you were today.</span>
-          </h1>
-
-          <p className="text-sm sm:text-base text-neutral-300 max-w-2xl leading-relaxed">
-            Every choice you made today cast a vote for the person you are becoming. No rationalizations, no vanity metrics—only clean, actionable awareness.
-          </p>
-
-          <div className="pt-2 flex flex-wrap items-center gap-4">
-            <button
-              onClick={() => setActiveTab('reflect')}
-              className="inline-flex items-center gap-2 px-6 py-3.5 bg-neutral-100 hover:bg-white text-neutral-950 font-bold text-sm rounded-xl transition-all shadow-lg hover:shadow-neutral-200/10 cursor-pointer group"
-            >
-              <span>START TODAY'S REFLECTION</span>
-              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-            </button>
-
-            <button
-              onClick={() => setActiveTab('mirror')}
-              className="inline-flex items-center gap-2 px-5 py-3.5 bg-neutral-800/80 hover:bg-neutral-800 text-neutral-200 hover:text-white font-medium text-sm rounded-xl border border-neutral-700/60 transition-all cursor-pointer"
-            >
-              <Sparkles className="w-4 h-4 text-amber-400" />
-              <span>Show Me The Mirror</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('chat')}
-              className="inline-flex items-center gap-2 px-5 py-3.5 bg-neutral-800/80 hover:bg-neutral-800 text-neutral-200 hover:text-white font-medium text-sm rounded-xl border border-neutral-700/60 transition-all cursor-pointer"
-            >
-              <MessageSquare className="w-4 h-4 text-indigo-400" />
-              <span>AI Reflection Coach</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Ambient subtle glow */}
-        <div className="absolute -top-24 -right-24 w-96 h-96 bg-amber-500/5 rounded-full blur-3xl pointer-events-none" />
-      </div>
-
-      {/* MANUAL ENTRY DATA POINT: SLEEP PERCENTAGE, RECOVERY WITH DATE */}
-      <div className="p-5 sm:p-6 rounded-2xl bg-neutral-900/70 border border-neutral-800 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-neutral-800/70">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-neutral-950 border border-neutral-800 text-indigo-400 shrink-0">
-              <Moon className="w-4 h-4" />
+    <div className="space-y-6 sm:space-y-8 pb-16">
+      {/* 1. TOP SECTION: IMPORTANT METRICS FIRST & MANUAL ENTRY */}
+      <div className="p-5 sm:p-7 rounded-2xl bg-neutral-900/80 border border-neutral-800 space-y-5">
+        {/* Date Selector Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-neutral-800/80">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-mono uppercase tracking-widest text-neutral-400">
+                DAILY METRICS LOG
+              </span>
+              {justSaved && (
+                <span className="flex items-center gap-1 text-[11px] font-mono text-emerald-400 bg-emerald-950/70 border border-emerald-800/80 px-2 py-0.5 rounded">
+                  <Check className="w-3 h-3" /> Saved
+                </span>
+              )}
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-sm font-bold text-neutral-100 tracking-wide uppercase font-mono">
-                  Daily Biometrics & Readiness Log
-                </h2>
-                {justSaved && (
-                  <span className="flex items-center gap-1 text-[11px] font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-800/80 px-2 py-0.5 rounded-full transition-opacity">
-                    <Check className="w-3 h-3" /> Saved
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-neutral-400">
-                Manual entry for physiological state to cross-audit recovery against cognitive willpower.
-              </p>
-            </div>
+            <h1 className="text-xl sm:text-2xl font-extrabold text-neutral-100 font-display">
+              Physical State & Daily Audit
+            </h1>
           </div>
 
-          {/* Date Selector */}
-          <div className="flex items-center gap-2 self-start sm:self-auto bg-neutral-950 p-1 rounded-xl border border-neutral-800">
+          {/* Date Controls */}
+          <div className="flex items-center gap-1.5 bg-neutral-950 p-1.5 rounded-xl border border-neutral-800 self-start sm:self-auto">
             <button
               onClick={() => shiftDate(-1)}
               title="Previous Day"
               className="p-1.5 text-neutral-400 hover:text-neutral-100 hover:bg-neutral-900 rounded-lg transition-colors cursor-pointer"
             >
-              <ChevronLeft className="w-3.5 h-3.5" />
+              <ChevronLeft className="w-4 h-4" />
             </button>
 
             <div className="flex items-center gap-1.5 px-2">
@@ -224,13 +200,13 @@ export const HomeView: React.FC = () => {
               title="Next Day"
               className="p-1.5 text-neutral-400 hover:text-neutral-100 hover:bg-neutral-900 rounded-lg transition-colors cursor-pointer"
             >
-              <ChevronRight className="w-3.5 h-3.5" />
+              <ChevronRight className="w-4 h-4" />
             </button>
 
             {selectedDate !== todayStr && (
               <button
                 onClick={() => setSelectedDate(todayStr)}
-                className="px-2 py-1 text-[11px] font-semibold text-amber-400 hover:text-amber-300 hover:bg-neutral-900 rounded-lg transition-colors cursor-pointer border-l border-neutral-800"
+                className="px-2.5 py-1 text-[11px] font-semibold text-amber-400 hover:text-amber-300 hover:bg-neutral-900 rounded-lg transition-colors cursor-pointer border-l border-neutral-800"
               >
                 Today
               </button>
@@ -240,15 +216,17 @@ export const HomeView: React.FC = () => {
 
         {/* 2 Main Manual Entry Data Points: Sleep Percentage & Recovery */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* 1. Sleep Percentage */}
-          <div className="p-4 rounded-xl bg-neutral-950/70 border border-neutral-800/80 space-y-3">
+          {/* A. Sleep Percentage Card */}
+          <div className="p-4 sm:p-5 rounded-xl bg-neutral-950/80 border border-neutral-800 space-y-3.5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Moon className="w-4 h-4 text-indigo-400" />
-                <span className="text-xs font-bold text-neutral-200">Sleep Percentage</span>
+                <span className="text-xs font-bold text-neutral-200 uppercase tracking-wide">
+                  Sleep Percentage
+                </span>
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="text-xl font-mono font-extrabold text-indigo-400 tabular-nums">
+                <span className="text-2xl font-mono font-extrabold text-indigo-400 tabular-nums">
                   {localSleepPercentage}%
                 </span>
                 <span className="text-xs text-neutral-500 font-mono">
@@ -258,7 +236,7 @@ export const HomeView: React.FC = () => {
             </div>
 
             {/* Slider */}
-            <div className="space-y-1.5">
+            <div className="space-y-1">
               <input
                 type="range"
                 min="0"
@@ -266,37 +244,37 @@ export const HomeView: React.FC = () => {
                 step="1"
                 value={localSleepPercentage}
                 onChange={(e) => handleUpdate({ sleep: Number(e.target.value) })}
-                className="w-full h-1.5 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                className="w-full h-2 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
               />
               <div className="flex justify-between items-center text-[10px] text-neutral-500 font-mono">
-                <span>0% Poor</span>
+                <span>0% Depleted</span>
                 <span>70% Adequate</span>
-                <span>85%+ Optimal</span>
+                <span>85%+ Prime</span>
                 <span>100%</span>
               </div>
             </div>
 
-            {/* Steppers & Hours */}
-            <div className="flex items-center justify-between pt-1 text-xs">
+            {/* Steppers & Hours Duration */}
+            <div className="flex items-center justify-between pt-1">
               <div className="flex items-center gap-1.5">
                 <button
                   type="button"
                   onClick={() => handleUpdate({ sleep: Math.max(0, localSleepPercentage - 5) })}
-                  className="px-2 py-1 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 rounded text-[11px] font-mono cursor-pointer"
+                  className="px-2.5 py-1 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 rounded text-xs font-mono cursor-pointer"
                 >
                   -5%
                 </button>
                 <button
                   type="button"
                   onClick={() => handleUpdate({ sleep: Math.min(100, localSleepPercentage + 5) })}
-                  className="px-2 py-1 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 rounded text-[11px] font-mono cursor-pointer"
+                  className="px-2.5 py-1 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 rounded text-xs font-mono cursor-pointer"
                 >
                   +5%
                 </button>
               </div>
 
               <div className="flex items-center gap-1.5">
-                <span className="text-[11px] text-neutral-400">Duration:</span>
+                <span className="text-xs text-neutral-400">Duration:</span>
                 <input
                   type="number"
                   min="0"
@@ -304,39 +282,37 @@ export const HomeView: React.FC = () => {
                   step="0.1"
                   value={localSleepHours}
                   onChange={(e) => handleUpdate({ hours: Math.max(0, Number(e.target.value)) })}
-                  className="w-14 px-1.5 py-0.5 bg-neutral-900 border border-neutral-800 rounded text-center text-xs font-mono text-neutral-200 focus:outline-none focus:border-indigo-500"
+                  className="w-16 px-2 py-0.5 bg-neutral-900 border border-neutral-800 rounded text-center text-xs font-mono text-neutral-200 focus:outline-none focus:border-indigo-500"
                 />
-                <span className="text-[11px] text-neutral-500">hrs</span>
+                <span className="text-xs text-neutral-500 font-mono">hrs</span>
               </div>
             </div>
 
-            {/* Status Quality Tag */}
-            <div className="pt-1 flex items-center gap-1.5 text-[11px]">
-              <span className={`inline-block w-2 h-2 rounded-full ${localSleepPercentage >= 85 ? 'bg-emerald-400' : localSleepPercentage >= 70 ? 'bg-indigo-400' : 'bg-rose-400'}`} />
-              <span className="text-neutral-400">
-                {localSleepPercentage >= 85
-                  ? 'Optimal restoration — High neural recovery'
-                  : localSleepPercentage >= 70
-                  ? 'Adequate sleep — Moderate recovery baseline'
-                  : 'Sleep deficit — Guard against mid-day willpower failure'}
-              </span>
+            <div className="text-[11px] text-neutral-400 pt-0.5">
+              {localSleepPercentage >= 85
+                ? 'High biological recovery. No cognitive excuse for slacking.'
+                : localSleepPercentage >= 70
+                ? 'Adequate foundation. Guard against afternoon friction.'
+                : 'Sleep deficit detected. Discipline must override fatigue.'}
             </div>
           </div>
 
-          {/* 2. Recovery Score */}
-          <div className="p-4 rounded-xl bg-neutral-950/70 border border-neutral-800/80 space-y-3">
+          {/* B. Recovery Score Card */}
+          <div className="p-4 sm:p-5 rounded-xl bg-neutral-950/80 border border-neutral-800 space-y-3.5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Activity className={`w-4 h-4 ${localRecoveryPercentage >= 67 ? 'text-emerald-400' : localRecoveryPercentage >= 34 ? 'text-amber-400' : 'text-rose-400'}`} />
-                <span className="text-xs font-bold text-neutral-200">Recovery Score</span>
+                <span className="text-xs font-bold text-neutral-200 uppercase tracking-wide">
+                  Recovery Score
+                </span>
               </div>
-              <span className={`text-xl font-mono font-extrabold tabular-nums ${localRecoveryPercentage >= 67 ? 'text-emerald-400' : localRecoveryPercentage >= 34 ? 'text-amber-400' : 'text-rose-400'}`}>
+              <span className={`text-2xl font-mono font-extrabold tabular-nums ${localRecoveryPercentage >= 67 ? 'text-emerald-400' : localRecoveryPercentage >= 34 ? 'text-amber-400' : 'text-rose-400'}`}>
                 {localRecoveryPercentage}%
               </span>
             </div>
 
             {/* Slider */}
-            <div className="space-y-1.5">
+            <div className="space-y-1">
               <input
                 type="range"
                 min="0"
@@ -344,492 +320,307 @@ export const HomeView: React.FC = () => {
                 step="1"
                 value={localRecoveryPercentage}
                 onChange={(e) => handleUpdate({ recovery: Number(e.target.value) })}
-                className="w-full h-1.5 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                className="w-full h-2 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
               />
               <div className="flex justify-between items-center text-[10px] text-neutral-500 font-mono">
                 <span className="text-rose-400">0% Low</span>
                 <span className="text-amber-400">34% Moderate</span>
-                <span className="text-emerald-400">67%+ Prime</span>
+                <span className="text-emerald-400">67%+ Peak</span>
                 <span>100%</span>
               </div>
             </div>
 
-            {/* Steppers & Quick Adjust */}
-            <div className="flex items-center justify-between pt-1 text-xs">
+            {/* Steppers & Manual Input */}
+            <div className="flex items-center justify-between pt-1">
               <div className="flex items-center gap-1.5">
                 <button
                   type="button"
                   onClick={() => handleUpdate({ recovery: Math.max(0, localRecoveryPercentage - 5) })}
-                  className="px-2 py-1 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 rounded text-[11px] font-mono cursor-pointer"
+                  className="px-2.5 py-1 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 rounded text-xs font-mono cursor-pointer"
                 >
                   -5%
                 </button>
                 <button
                   type="button"
                   onClick={() => handleUpdate({ recovery: Math.min(100, localRecoveryPercentage + 5) })}
-                  className="px-2 py-1 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 rounded text-[11px] font-mono cursor-pointer"
+                  className="px-2.5 py-1 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 rounded text-xs font-mono cursor-pointer"
                 >
                   +5%
                 </button>
               </div>
 
               <div className="flex items-center gap-1.5">
-                <span className="text-[11px] text-neutral-400">Manual input:</span>
+                <span className="text-xs text-neutral-400">Manual:</span>
                 <input
                   type="number"
                   min="0"
                   max="100"
                   value={localRecoveryPercentage}
                   onChange={(e) => handleUpdate({ recovery: Math.min(100, Math.max(0, Number(e.target.value))) })}
-                  className="w-14 px-1.5 py-0.5 bg-neutral-900 border border-neutral-800 rounded text-center text-xs font-mono text-neutral-200 focus:outline-none focus:border-emerald-500"
+                  className="w-16 px-2 py-0.5 bg-neutral-900 border border-neutral-800 rounded text-center text-xs font-mono text-neutral-200 focus:outline-none focus:border-emerald-500"
                 />
-                <span className="text-[11px] text-neutral-500">%</span>
+                <span className="text-xs text-neutral-500 font-mono">%</span>
               </div>
             </div>
 
-            {/* Status Quality Tag */}
-            <div className="pt-1 flex items-center gap-1.5 text-[11px]">
-              <span className={`inline-block w-2 h-2 rounded-full ${localRecoveryPercentage >= 67 ? 'bg-emerald-400' : localRecoveryPercentage >= 34 ? 'bg-amber-400' : 'bg-rose-400'}`} />
-              <span className="text-neutral-400">
-                {localRecoveryPercentage >= 67
-                  ? 'Prime Readiness (Green) — High physical & mental capacity'
-                  : localRecoveryPercentage >= 34
-                  ? 'Moderate Capacity (Yellow) — Maintain steady, unhurried discipline'
-                  : 'Restorative State (Red) — Prioritize energy boundaries & active rest'}
-              </span>
+            <div className="text-[11px] text-neutral-400 pt-0.5">
+              {localRecoveryPercentage >= 67
+                ? 'High readiness. Full capacity to crush complex work.'
+                : localRecoveryPercentage >= 34
+                ? 'Moderate baseline. Maintain steady, unyielding momentum.'
+                : 'Low readiness. Do not quit—simplify focus to essentials.'}
             </div>
           </div>
         </div>
 
-        {/* Dynamic Context Footer */}
-        <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between text-xs text-neutral-400 gap-2">
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-neutral-300">
-              Entry for {selectedDate}:
-            </span>
-            <span>
-              Sleep: <strong className="text-indigo-400">{localSleepPercentage}%</strong> · Recovery: <strong className={localRecoveryPercentage >= 67 ? 'text-emerald-400' : localRecoveryPercentage >= 34 ? 'text-amber-400' : 'text-rose-400'}>{localRecoveryPercentage}%</strong>
-            </span>
+        {/* DYNAMIC MOVING ELEMENT: Bio-Waveform Canvas */}
+        <DynamicBiometricWave
+          recoveryPercentage={localRecoveryPercentage}
+          sleepPercentage={localSleepPercentage}
+        />
+
+        {/* Core Metrics Strip */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 pt-1">
+          <div className="p-3.5 rounded-xl bg-neutral-950/80 border border-neutral-800 space-y-1">
+            <div className="text-[11px] text-neutral-400 font-mono">RECOVERY</div>
+            <div className={`text-xl font-extrabold font-mono tabular-nums ${localRecoveryPercentage >= 67 ? 'text-emerald-400' : 'text-amber-400'}`}>
+              {localRecoveryPercentage}%
+            </div>
+            <div className="text-[10px] text-neutral-500">Readiness Score</div>
           </div>
 
-          <div className="text-[11px] text-neutral-500 italic">
-            Changes auto-save instantly and sync directly into today's reflection verdicts.
+          <div className="p-3.5 rounded-xl bg-neutral-950/80 border border-neutral-800 space-y-1">
+            <div className="text-[11px] text-neutral-400 font-mono">SLEEP</div>
+            <div className="text-xl font-extrabold font-mono tabular-nums text-indigo-400">
+              {localSleepPercentage}%
+            </div>
+            <div className="text-[10px] text-neutral-500">{localSleepHours} Hours Logged</div>
+          </div>
+
+          <div className="p-3.5 rounded-xl bg-neutral-950/80 border border-neutral-800 space-y-1">
+            <div className="text-[11px] text-neutral-400 font-mono">EXECUTION</div>
+            <div className={`text-xl font-extrabold font-mono tabular-nums ${failedTasks > 0 ? 'text-rose-400' : 'text-neutral-100'}`}>
+              {executionRate}%
+            </div>
+            <div className="text-[10px] text-neutral-500">
+              {failedTasks > 0 ? `${failedTasks} FAILED` : `${completedTasks}/${totalTasks} Tasks`}
+            </div>
+          </div>
+
+          <div className="p-3.5 rounded-xl bg-neutral-950/80 border border-neutral-800 space-y-1">
+            <div className="text-[11px] text-neutral-400 font-mono">DISCIPLINE</div>
+            <div className="text-xl font-extrabold font-mono tabular-nums text-amber-400">
+              {scores?.discipline?.score ?? 78}/100
+            </div>
+            <div className="text-[10px] text-neutral-500 truncate">Consistency rating</div>
+          </div>
+
+          <div className="p-3.5 rounded-xl bg-neutral-950/80 border border-neutral-800 space-y-1">
+            <div className="text-[11px] text-neutral-400 font-mono">FOCUS</div>
+            <div className="text-xl font-extrabold font-mono tabular-nums text-blue-400">
+              {scores?.focus?.score ?? 72}/100
+            </div>
+            <div className="text-[10px] text-neutral-500 truncate">Cognitive depth</div>
+          </div>
+
+          <div className="p-3.5 rounded-xl bg-neutral-950/80 border border-neutral-800 space-y-1">
+            <div className="text-[11px] text-neutral-400 font-mono">TOTAL SCORE</div>
+            <div className="text-xl font-extrabold font-mono tabular-nums text-neutral-100">
+              {overallScore}/100
+            </div>
+            <div className="text-[10px] text-neutral-500">Daily Composite</div>
           </div>
         </div>
       </div>
 
-      {/* 2. Today's Reflection Status & Overview Strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
-        <div className="p-4 rounded-xl bg-neutral-900/40 border border-neutral-800/80 space-y-1">
-          <div className="text-xs text-neutral-300 font-medium flex items-center justify-between">
-            <span>Status</span>
-            {todayReflection ? (
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-            ) : (
-              <Clock className="w-3.5 h-3.5 text-amber-400" />
-            )}
-          </div>
-          <div className="text-sm font-semibold text-neutral-200">
-            {todayReflection ? 'Logged' : 'Pending Tonight'}
-          </div>
-          <div className="text-[11px] text-neutral-300">
-            {todayReflection ? `${todayReflection.mode} mode` : 'Takes ~3 minutes'}
-          </div>
-        </div>
-
-        <div className="p-4 rounded-xl bg-neutral-900/40 border border-neutral-800/80 space-y-1">
-          <div className="text-xs text-neutral-300 font-medium flex items-center justify-between">
-            <span>Discipline</span>
-            <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
-          </div>
-          <div className="text-xl font-bold font-mono tabular-nums text-neutral-100">
-            {scores?.discipline?.score ?? 78}/100
-          </div>
-          <div className="text-[11px] text-neutral-300 truncate">
-            {scores?.discipline?.reason ?? 'Execution consistency'}
-          </div>
-        </div>
-
-        <div className="p-4 rounded-xl bg-neutral-900/40 border border-neutral-800/80 space-y-1">
-          <div className="text-xs text-neutral-300 font-medium flex items-center justify-between">
-            <span>Focus</span>
-            <Focus className="w-3.5 h-3.5 text-blue-400" />
-          </div>
-          <div className="text-xl font-bold font-mono tabular-nums text-neutral-100">
-            {scores?.focus?.score ?? 72}/100
-          </div>
-          <div className="text-[11px] text-neutral-300 truncate">
-            {scores?.focus?.reason ?? 'Cognitive throughput'}
-          </div>
-        </div>
-
-        <div className="p-4 rounded-xl bg-neutral-900/40 border border-neutral-800/80 space-y-1">
-          <div className="text-xs text-neutral-300 font-medium flex items-center justify-between">
-            <span>Energy & Body</span>
-            <Zap className="w-3.5 h-3.5 text-emerald-400" />
-          </div>
-          <div className="text-xl font-bold font-mono tabular-nums text-neutral-100">
-            {todayReflection?.answers?.energyLevel ? `${todayReflection.answers.energyLevel}/10` : '7/10'}
-          </div>
-          <div className="text-[11px] text-neutral-300 truncate">
-            {todayReflection?.answers?.exerciseDone ? 'Workout completed' : 'Rest day'}
-          </div>
-        </div>
-
-        <div className="p-4 rounded-xl bg-neutral-900/40 border border-neutral-800/80 space-y-1">
-          <div className="text-xs text-neutral-300 font-medium flex items-center justify-between">
-            <span>Sleep</span>
-            <Moon className="w-3.5 h-3.5 text-indigo-400" />
-          </div>
-          <div className="text-xl font-bold font-mono tabular-nums text-neutral-100">
-            {todayReflection?.answers?.sleepHours ? `${todayReflection.answers.sleepHours}h` : '7.5h'}
-          </div>
-          <div className="text-[11px] text-neutral-300 truncate">
-            Quality: {todayReflection?.answers?.sleepQuality ? `${todayReflection.answers.sleepQuality}/10` : '8/10'}
-          </div>
-        </div>
-
-        <div className="p-4 rounded-xl bg-neutral-900/40 border border-neutral-800/80 space-y-1">
-          <div className="text-xs text-neutral-300 font-medium flex items-center justify-between">
-            <span>Relationships</span>
-            <Users className="w-3.5 h-3.5 text-rose-400" />
-          </div>
-          <div className="text-xl font-bold font-mono tabular-nums text-neutral-100">
-            {scores?.relationships?.score ?? 76}/100
-          </div>
-          <div className="text-[11px] text-neutral-300 truncate">
-            {scores?.relationships?.reason ?? 'Connection logged'}
-          </div>
-        </div>
-      </div>
-
-      {/* Daily Progress Video Check-in Banner */}
-      <div className="p-5 rounded-2xl bg-neutral-900/60 border border-neutral-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-start sm:items-center gap-3.5">
-          <div className="p-2.5 rounded-xl bg-neutral-950 border border-neutral-800 text-amber-400 shrink-0 mt-0.5 sm:mt-0">
-            <Video className="w-5 h-5" />
-          </div>
+      {/* 2. SWITCH COMPANY WAR ROOM: 7-8H NON-STOP STUDY ENGINE */}
+      <div className="p-5 sm:p-6 rounded-2xl bg-neutral-900/90 border border-neutral-800 space-y-4 relative overflow-hidden shadow-lg">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
-              <span className="text-sm font-bold text-neutral-100 font-display">
-                Daily Progress Video
+              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold tracking-widest uppercase bg-amber-950/80 text-amber-300 border border-amber-800/80">
+                SWITCH COMPANY SPRINT
               </span>
-              {todayVideo ? (
-                <span className="flex items-center gap-1 text-[11px] font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-800/80 px-2 py-0.5 rounded-full">
-                  <CheckCircle2 className="w-3 h-3" /> Recorded for Today
+              {isSwitchTimerActive ? (
+                <span className="flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono text-emerald-400 bg-emerald-950/80 border border-emerald-800">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                  </span>
+                  STOPWATCH TICKING
                 </span>
               ) : (
-                <span className="text-[11px] font-mono text-amber-400 bg-amber-950/40 border border-amber-800/80 px-2 py-0.5 rounded-full">
-                  Pending Check-in
+                <span className="text-[11px] font-mono text-neutral-400">
+                  {studyHoursToday >= targetStudyHours ? '🔥 TARGET MET' : `${Number((targetStudyHours - studyHoursToday).toFixed(1))}h REMAINING`}
                 </span>
               )}
             </div>
-            <p className="text-xs text-neutral-300 max-w-xl">
-              {todayVideo 
-                ? `"${todayVideo.title}" (${Math.floor(todayVideo.durationSeconds / 60)}m ${todayVideo.durationSeconds % 60}s) logged in your video vault. Watch back or record another entry.`
-                : 'Capture a 60–120 second video check-in. Face yourself unedited, speak what worked, what you avoided, and what tomorrow demands.'
-              }
+            <h2 className="text-lg font-bold text-neutral-100 font-display">
+              Today's Study Goal: 7–8 Hours
+            </h2>
+            <p className="text-xs text-neutral-400">
+              Target: Generative AI Engineer (17–20+ LPA) · Focused daily preparation
             </p>
           </div>
+
+          <button
+            onClick={() => setActiveTab('switch')}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs bg-amber-500 hover:bg-amber-400 text-neutral-950 shadow-md transition-all cursor-pointer whitespace-nowrap self-start sm:self-auto"
+          >
+            <Play className="w-3.5 h-3.5 fill-current" />
+            <span>Open Switch Company</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={() => setActiveTab('video')}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-neutral-100 hover:bg-white text-neutral-950 font-bold text-xs rounded-xl transition-colors shadow-md cursor-pointer whitespace-nowrap"
-          >
-            <Video className="w-3.5 h-3.5 text-neutral-950" />
-            <span>{todayVideo ? 'Watch / Manage Videos →' : 'Record Today’s Video →'}</span>
-          </button>
+        {/* Dynamic Study Progress Bar */}
+        <div className="p-4 rounded-xl bg-neutral-950/80 border border-neutral-800/80 space-y-2.5">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-mono text-neutral-400">Today's Grinding Depth</span>
+            <span className="font-mono font-bold text-neutral-100">
+              {studyHoursToday} <span className="text-neutral-400 text-xs">/ {targetStudyHours}h Target</span>{' '}
+              <span className="text-amber-400">({Math.min(100, Math.round((studyHoursToday / targetStudyHours) * 100))}%)</span>
+            </span>
+          </div>
+
+          <div className="h-2.5 w-full bg-neutral-900 rounded-full overflow-hidden p-0.5 border border-neutral-800">
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${
+                studyHoursToday >= targetStudyHours
+                  ? 'bg-emerald-500'
+                  : studyHoursToday >= 4
+                  ? 'bg-amber-400'
+                  : 'bg-rose-500'
+              }`}
+              style={{ width: `${Math.min(100, Math.round((studyHoursToday / targetStudyHours) * 100))}%` }}
+            ></div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] font-mono text-neutral-400 pt-0.5">
+            <span className="text-neutral-300">
+              {studyHoursToday < 3
+                ? '⚠️ You are behind schedule. Candidates targeting your dream tier are already grinding.'
+                : studyHoursToday < targetStudyHours
+                ? '⚡ Momentum active. Push through the remaining hours non-stop.'
+                : '🏆 Full 7-8h marathon logged. Elite consistency.'}
+            </span>
+            <span className="text-neutral-400 truncate">
+              Target: Senior Software Engineer (Tier-1)
+            </span>
+          </div>
         </div>
       </div>
 
-      {/* 3. Daily Score Hero Card & Breakdown */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-5 rounded-2xl bg-neutral-900/50 border border-neutral-800 p-6 sm:p-8 flex flex-col justify-between">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-mono uppercase tracking-wider text-neutral-300">Daily Assessment</span>
-              <span className="text-xs text-neutral-300">Composite Index</span>
-            </div>
+      {/* 3. DAILY NON-NEGOTIABLES & FAILURE AUDIT */}
+      <DailyTasksAudit selectedDate={selectedDate} />
 
-            <div className="flex items-baseline gap-3">
-              <span className="text-6xl sm:text-7xl font-extrabold font-mono tabular-nums text-neutral-100 tracking-tight">
-                {overallScore}
-              </span>
-              <span className="text-xl text-neutral-300 font-mono">/ 100</span>
-            </div>
 
-            <div className="space-y-1 pt-2">
-              <div className="text-sm font-semibold text-neutral-200">
-                TODAY'S BEHAVIOR SCORE
-              </div>
-              <p className="text-xs text-neutral-300 leading-relaxed">
-                Your strongest area today was <strong className="text-neutral-200 capitalize">{strongestArea}</strong>. Your weakest area was <strong className="text-neutral-200 capitalize">{weakestArea}</strong>.
-              </p>
-              <p className="text-[11px] text-neutral-400 italic pt-1">
-                This score represents behavior executed today, not your worth as a human being.
-              </p>
+      {/* 3. DAILY PROGRESS VIDEO VAULT & RECORDER */}
+      <DailyProgressVideoSection selectedDate={selectedDate} />
+
+      {/* 4. TODAY'S UNFLINCHING VERDICT & EVENING AUDIT */}
+      <div className="rounded-2xl bg-neutral-900/60 border border-neutral-800 p-5 sm:p-7 space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-neutral-800/80">
+          <div>
+            <div className="text-xs font-mono uppercase tracking-wider text-neutral-400">
+              HONEST BEHAVIORAL VERDICT
             </div>
+            <h2 className="text-lg font-bold text-neutral-100 font-display">
+              Who You Were Today
+            </h2>
           </div>
 
-          {/* Sub-scores bars */}
-          <div className="mt-8 space-y-3 pt-6 border-t border-neutral-800/80">
-            {scores && (
-              <>
-                <ScoreBar label="Discipline" score={scores.discipline.score} color="bg-amber-500" />
-                <ScoreBar label="Focus" score={scores.focus.score} color="bg-blue-500" />
-                <ScoreBar label="Health & Body" score={scores.health.score} color="bg-emerald-500" />
-                <ScoreBar label="Active Learning" score={scores.learning.score} color="bg-purple-500" />
-                <ScoreBar label="Relationships" score={scores.relationships.score} color="bg-rose-500" />
-                <ScoreBar label="Mood & Baseline" score={scores.mood.score} color="bg-indigo-500" />
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Today's Verdict & Analysis */}
-        <div className="lg:col-span-7 rounded-2xl bg-neutral-900/50 border border-neutral-800 p-6 sm:p-8 space-y-6 flex flex-col justify-between">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-mono uppercase tracking-wider text-neutral-300">Analysis Engine</span>
-                <span aria-hidden="true">·</span>
-                <span className="text-xs text-neutral-300">
-                  {todayReflection?.date ? `Logged for ${todayReflection.date}` : 'Latest Assessment'}
-                </span>
-              </div>
-              <span className="text-xs font-semibold px-2 py-0.5 rounded bg-neutral-800 text-neutral-200">
-                TODAY'S VERDICT
-              </span>
-            </div>
-
-            <p className="text-base sm:text-lg text-neutral-200 leading-relaxed font-medium">
-              "{todayReflection?.verdict?.summary || 'You executed physically and built high-velocity morning momentum, then capitulated to discomfort the moment your task became ambiguous. The problem was not fatigue; it was low tolerance for cognitive friction.'}"
-            </p>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-              <div className="p-4 rounded-xl bg-neutral-950/60 border border-neutral-800/80 space-y-1.5">
-                <div className="text-xs font-bold text-emerald-400 uppercase tracking-wide">
-                  Biggest Win
-                </div>
-                <div className="text-xs text-neutral-300 leading-relaxed">
-                  {todayReflection?.verdict?.win || 'Maintained physical training standard and executed high-impact benchmarks.'}
-                </div>
-              </div>
-
-              <div className="p-4 rounded-xl bg-neutral-950/60 border border-neutral-800/80 space-y-1.5">
-                <div className="text-xs font-bold text-rose-400 uppercase tracking-wide">
-                  Biggest Miss
-                </div>
-                <div className="text-xs text-neutral-300 leading-relaxed">
-                  {todayReflection?.verdict?.miss || 'Permitted low-friction phone diversion when tests became tedious.'}
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
-              <div className="p-4 rounded-xl bg-neutral-950/60 border border-neutral-800/80 space-y-1.5">
-                <div className="text-xs font-bold text-amber-400 uppercase tracking-wide">
-                  Pattern Identified
-                </div>
-                <div className="text-xs text-neutral-300 leading-relaxed">
-                  {todayReflection?.verdict?.pattern || 'Phone escape reflex triggered precisely when code difficulty spikes.'}
-                </div>
-              </div>
-
-              <div className="p-4 rounded-xl bg-neutral-950/60 border border-neutral-800/80 space-y-1.5">
-                <div className="text-xs font-bold text-indigo-400 uppercase tracking-wide">
-                  Blind Spot
-                </div>
-                <div className="text-xs text-neutral-300 leading-relaxed">
-                  {todayReflection?.verdict?.blindSpot || 'Rationalizing afternoon attention lapses as exhaustion rather than discomfort avoidance.'}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="pt-4 border-t border-neutral-800/80 flex items-center justify-between text-xs text-neutral-300">
-            <span>Emotional State: <strong className="text-neutral-300">{todayReflection?.verdict?.emotionalState || 'Focused with underlying impatience'}</strong></span>
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => setActiveTab('history')}
-              className="text-neutral-300 hover:text-neutral-100 underline underline-offset-2 transition-colors cursor-pointer"
+              onClick={() => setShowReflectModal(true)}
+              className="px-4 py-2 bg-neutral-100 hover:bg-white text-neutral-950 font-bold text-xs rounded-xl transition-all shadow-md cursor-pointer flex items-center gap-2"
             >
-              View Full History →
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Full Reflection Audit</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('chat')}
+              className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-medium text-xs rounded-xl border border-neutral-700 transition-colors cursor-pointer flex items-center gap-1.5"
+            >
+              <MessageSquare className="w-3.5 h-3.5 text-amber-400" />
+              <span>Confront in AI Chat</span>
             </button>
           </div>
         </div>
-      </div>
 
-      {/* 4. Streaks Discipline Matrix */}
-      <div className="rounded-2xl bg-neutral-900/40 border border-neutral-800 p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Flame className="w-4 h-4 text-amber-500" />
-            <h2 className="text-sm font-bold uppercase tracking-wider text-neutral-200">
-              Active Behavioral Streaks
-            </h2>
+        {/* Verdict Statement */}
+        <div className="p-4 sm:p-5 rounded-xl bg-neutral-950/80 border border-neutral-800 space-y-2">
+          <p className="text-sm sm:text-base text-neutral-200 leading-relaxed font-medium">
+            "{todayReflection?.verdict?.summary || 'You executed physically and built morning momentum, but capitulated to comfort when resistance appeared. The issue was not lack of capacity; it was voluntary surrender to cognitive friction.'}"
+          </p>
+        </div>
+
+        {/* Win vs Miss */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="p-4 rounded-xl bg-neutral-950/60 border border-neutral-800/80 space-y-1.5">
+            <div className="text-xs font-bold text-emerald-400 uppercase tracking-wide font-mono">
+              Legitimate Win
+            </div>
+            <p className="text-xs text-neutral-300 leading-relaxed">
+              {todayReflection?.verdict?.win || 'Maintained physical training standard and executed high-impact benchmarks.'}
+            </p>
           </div>
-          <span className="text-xs text-neutral-300">Self-awareness over gamification</span>
+
+          <div className="p-4 rounded-xl bg-neutral-950/60 border border-neutral-800/80 space-y-1.5">
+            <div className="text-xs font-bold text-rose-400 uppercase tracking-wide font-mono">
+              Unacceptable Miss
+            </div>
+            <p className="text-xs text-neutral-300 leading-relaxed">
+              {failedTasks > 0
+                ? `${failedTasks} non-negotiable commitment failed. Excuses cannot substitute for execution.`
+                : todayReflection?.verdict?.miss || 'Allowed low-friction phone diversion when tests became tedious.'}
+            </p>
+          </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          <StreakCard label="Reflection" count={streaks.reflectionStreak} unit="days" icon={<Flame className="w-3.5 h-3.5 text-amber-500" />} />
-          <StreakCard label="Workout" count={streaks.workoutStreak} unit="days" icon={<Dumbbell className="w-3.5 h-3.5 text-emerald-500" />} />
-          <StreakCard label="Deep Work" count={streaks.deepWorkStreak} unit="days" icon={<Focus className="w-3.5 h-3.5 text-blue-500" />} />
-          <StreakCard label="Sleep > 7h" count={streaks.sleepConsistencyStreak} unit="days" icon={<Moon className="w-3.5 h-3.5 text-indigo-500" />} />
-          <StreakCard label="Learning" count={streaks.learningStreak} unit="days" icon={<Brain className="w-3.5 h-3.5 text-purple-500" />} />
-          <StreakCard label="Distraction Free" count={streaks.noSocialMediaStreak} unit="days" icon={<PhoneOff className="w-3.5 h-3.5 text-rose-500" />} />
-        </div>
-      </div>
-
-      {/* 5. Tomorrow's Non-Negotiables & Pattern Alert */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Tomorrow's Plan */}
-        <div className="lg:col-span-7 rounded-2xl bg-neutral-900/50 border border-neutral-800 p-6 space-y-5">
+        {/* Tomorrow's 3 Non-Negotiables */}
+        <div className="p-4 rounded-xl bg-neutral-950/60 border border-neutral-800/80 space-y-3">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-              <h2 className="text-sm font-bold uppercase tracking-wider text-neutral-200">
-                Tomorrow's Battle Plan
-              </h2>
+            <div className="text-xs font-mono uppercase tracking-wider text-amber-400 font-bold">
+              Tomorrow's 3 Non-Negotiables
             </div>
-            <span className="text-xs text-neutral-300">Actionable execution</span>
-          </div>
-
-          <div className="p-4 rounded-xl bg-neutral-950 border border-neutral-800 space-y-1">
-            <div className="text-[11px] font-mono uppercase text-amber-400 tracking-wider font-semibold">
-              ONE THING TO WIN
-            </div>
-            <div className="text-sm font-semibold text-neutral-100">
-              {tomorrowPlan?.oneThingToWin || 'Write the complete socket edge-case test suite before opening any browser tab.'}
-            </div>
+            <span className="text-[11px] text-neutral-500 font-mono">Execution Targets</span>
           </div>
 
           <div className="space-y-2">
-            <div className="text-xs font-mono uppercase text-neutral-300 tracking-wider">
-              3 Non-Negotiables
-            </div>
-            <div className="space-y-2">
-              {(tomorrowPlan?.nonNegotiables || [
-                'No phone inside the office room between 1:30 PM and 4:30 PM.',
-                'Complete 45 minutes of Distributed Consensus reading with handwritten notes.',
-                'Cook dinner with partner with zero phone checks.',
-              ]).map((item, idx) => (
-                <div key={idx} className="flex items-start gap-3 p-3 rounded-lg bg-neutral-950/60 border border-neutral-800/70 text-xs text-neutral-200">
-                  <span className="font-mono text-neutral-400 shrink-0 font-bold">{idx + 1}.</span>
-                  <span>{item}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 text-xs">
-            <div className="p-3 rounded-lg bg-neutral-950/40 border border-neutral-800/60 space-y-1">
-              <span className="text-rose-400 font-semibold uppercase text-[10px] tracking-wider">Stop</span>
-              <p className="text-neutral-300">{tomorrowPlan?.oneThingToStop || 'Reaching for phone when compiler throws errors.'}</p>
-            </div>
-            <div className="p-3 rounded-lg bg-neutral-950/40 border border-neutral-800/60 space-y-1">
-              <span className="text-emerald-400 font-semibold uppercase text-[10px] tracking-wider">Start</span>
-              <p className="text-neutral-300">{tomorrowPlan?.oneThingToStart || 'Take 3 deep breaths and write the smallest test first.'}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Behavioral Pattern Spotlight */}
-        <div className="lg:col-span-5 rounded-2xl bg-neutral-900/50 border border-neutral-800 p-6 space-y-5 flex flex-col justify-between">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-amber-400" />
-                <h2 className="text-sm font-bold uppercase tracking-wider text-neutral-200">
-                  Detected Pattern Spotlight
-                </h2>
+            {(tomorrowPlan?.nonNegotiables || [
+              'No phone inside the workspace between 9:00 AM and 1:00 PM.',
+              'Complete high-resistance priority before opening email or feeds.',
+              'Complete workout with zero compromises on volume.',
+            ]).map((item, idx) => (
+              <div key={idx} className="flex items-start gap-2.5 text-xs text-neutral-200">
+                <span className="font-mono text-amber-400 font-bold shrink-0">{idx + 1}.</span>
+                <span>{item}</span>
               </div>
-              <span className="text-xs text-neutral-300">Recurrence</span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Deep Reflection Modal (if user wants to run the complete 6-step questionnaire) */}
+      {showReflectModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-y-auto">
+          <div className="relative w-full max-w-4xl bg-neutral-950 border border-neutral-800 rounded-2xl p-6 sm:p-8 space-y-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center pb-3 border-b border-neutral-800">
+              <h2 className="text-base font-bold text-neutral-100 font-display">
+                Evening Reflection Protocol
+              </h2>
+              <button
+                onClick={() => setShowReflectModal(false)}
+                className="text-xs text-neutral-400 hover:text-white px-2 py-1 rounded bg-neutral-900 border border-neutral-800 cursor-pointer"
+              >
+                Close ✕
+              </button>
             </div>
-
-            {recentPattern ? (
-              <div className="space-y-3 p-4 rounded-xl bg-neutral-950/80 border border-neutral-800/90">
-                <div className="text-sm font-bold text-neutral-100">
-                  {recentPattern.pattern}
-                </div>
-                <div className="text-xs text-neutral-300 leading-relaxed">
-                  <span className="text-neutral-400 font-medium">Evidence:</span> {recentPattern.evidence}
-                </div>
-                <div className="pt-2 border-t border-neutral-800/80 text-xs text-neutral-300">
-                  <span className="text-amber-400 font-semibold">Intervention:</span> {recentPattern.suggestedIntervention}
-                </div>
-              </div>
-            ) : (
-              <p className="text-xs text-neutral-300">Log 3 or more daily reflections to trigger automatic pattern detection.</p>
-            )}
-          </div>
-
-          <div className="pt-4 border-t border-neutral-800/80 flex items-center justify-between">
-            <button
-              onClick={() => setActiveTab('insights')}
-              className="text-xs font-semibold text-neutral-300 hover:text-white transition-colors cursor-pointer"
-            >
-              View All Patterns & Weekly Review →
-            </button>
-            <button
-              onClick={() => setActiveTab('life')}
-              className="text-xs font-semibold text-neutral-300 hover:text-white transition-colors cursor-pointer"
-            >
-              Life Area Scores →
-            </button>
+            <ReflectFlow />
           </div>
         </div>
-      </div>
-    </div>
-  );
-};
-
-interface ScoreBarProps {
-  label: string;
-  score: number;
-  color: string;
-}
-
-const ScoreBar: React.FC<ScoreBarProps> = ({ label, score, color }) => {
-  return (
-    <div className="space-y-1">
-      <div className="flex justify-between text-xs">
-        <span className="text-neutral-300">{label}</span>
-        <span className="font-mono tabular-nums text-neutral-200 font-medium">{score}</span>
-      </div>
-      <div className="h-1.5 w-full bg-neutral-800 rounded-full overflow-hidden">
-        <div
-          className={`h-full ${color} rounded-full transition-all duration-500`}
-          style={{ width: `${Math.min(100, Math.max(0, score))}%` }}
-        />
-      </div>
-    </div>
-  );
-};
-
-interface StreakCardProps {
-  label: string;
-  count: number;
-  unit: string;
-  icon: React.ReactNode;
-}
-
-const StreakCard: React.FC<StreakCardProps> = ({ label, count, unit, icon }) => {
-  return (
-    <div className="p-3 rounded-xl bg-neutral-950/60 border border-neutral-800/60 flex items-center gap-3">
-      <div className="p-2 rounded-lg bg-neutral-900 border border-neutral-800 shrink-0">
-        {icon}
-      </div>
-      <div>
-        <div className="text-base font-extrabold font-mono tabular-nums text-neutral-100">
-          {count} <span className="text-[11px] font-normal text-neutral-400">{unit}</span>
-        </div>
-        <div className="text-[11px] text-neutral-300 truncate">
-          {label}
-        </div>
-      </div>
+      )}
     </div>
   );
 };

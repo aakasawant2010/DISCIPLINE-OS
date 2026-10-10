@@ -16,25 +16,22 @@ import { JournalSearchView } from './components/JournalSearchView';
 import { SettingsView } from './components/SettingsView';
 import { DailyProgressVideoView } from './components/DailyProgressVideoView';
 import { ChatReflectionView } from './components/ChatReflectionView';
+import { SwitchCompanyWarRoom } from './components/SwitchCompanyWarRoom';
 
 const MainContent: React.FC = () => {
   const { activeTab } = useApp();
 
-  return (
-    <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-8">
-      {activeTab === 'home' && <HomeView />}
-      {activeTab === 'reflect' && <ReflectFlow />}
-      {activeTab === 'chat' && <ChatReflectionView />}
-      {activeTab === 'video' && <DailyProgressVideoView />}
-      {activeTab === 'mirror' && <TheMirrorView />}
-      {activeTab === 'insights' && <InsightsView />}
-      {activeTab === 'life' && <LifeAreasView />}
-      {activeTab === 'future' && <FutureMeView />}
-      {activeTab === 'history' && <JournalSearchView />}
-      {activeTab === 'settings' && <SettingsView />}
-    </main>
-  );
+  if (activeTab === 'chat') {
+    return <ChatReflectionView />;
+  }
+
+  if (activeTab === 'switch') {
+    return <SwitchCompanyWarRoom />;
+  }
+
+  return <HomeView />;
 };
+
 
 export default function App() {
   return (

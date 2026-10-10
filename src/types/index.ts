@@ -210,6 +210,15 @@ export interface DailyProgressVideo {
   createdAt: string;
 }
 
+export interface DailyTask {
+  id: string;
+  title: string;
+  category: 'deep-work' | 'fitness' | 'learning' | 'discipline' | 'health' | 'custom';
+  status: 'pending' | 'completed' | 'failed';
+  failureReason?: string;
+  date: string; // YYYY-MM-DD
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'model';
@@ -219,6 +228,7 @@ export interface ChatMessage {
 
 export type NavigationTab = 
   | 'home' 
+  | 'switch'
   | 'reflect' 
   | 'chat'
   | 'video'
@@ -228,3 +238,77 @@ export type NavigationTab =
   | 'future' 
   | 'history' 
   | 'settings';
+
+export type StudyCategory = 
+  | 'dsa' 
+  | 'system-design' 
+  | 'cs-fundamentals' 
+  | 'projects-resume' 
+  | 'mock-interview' 
+  | 'applications';
+
+export interface SwitchStudySession {
+  id: string;
+  date: string; // YYYY-MM-DD
+  durationMinutes: number;
+  category: StudyCategory;
+  topic: string;
+  problemsSolved?: number;
+  notes?: string;
+  timestamp: string;
+}
+
+export interface SwitchGoalConfig {
+  dailyTargetHours: number; // e.g. 7.5 or 8
+  targetRole: string; // e.g. "Senior Software Engineer / SDE-2"
+  targetCompanyTier: string; // e.g. "Tier 1 Tech / FAANG / High-Growth Unicorn"
+  targetSwitchDate: string; // e.g. "2026-12-31"
+  currentCTC: string; // e.g. "16 LPA" or "$115,000"
+  targetCTC: string; // e.g. "48 LPA" or "$230,000"
+}
+
+export interface SwitchChecklistItem {
+  id: string;
+  category: 'dsa' | 'system-design' | 'cs-fundamentals' | 'resume-portfolio' | 'networking' | 'negotiation';
+  title: string;
+  description: string;
+  status: 'not_started' | 'in_progress' | 'mastered';
+  priority: 'critical' | 'high' | 'medium';
+}
+
+export interface CompanyApplication {
+  id: string;
+  company: string;
+  role: string;
+  tier: 'Tier 1 / FAANG' | 'Unicorn' | 'Product Tech' | 'Early Startup';
+  status: 'wishlist' | 'referral_sought' | 'applied' | 'oa' | 'tech_round' | 'system_design' | 'behavioral' | 'offer' | 'rejected';
+  expectedComp: string;
+  offeredComp?: string;
+  notes: string;
+  dateApplied: string;
+  nextRoundDate?: string;
+}
+
+export interface DSAProblemRecord {
+  id: string;
+  name: string;
+  platform: 'LeetCode' | 'Codeforces' | 'NeetCode' | 'GeeksforGeeks';
+  difficulty: 'Easy' | 'Medium' | 'Hard';
+  topic: string;
+  completedDate: string;
+  timeSpentMinutes: number;
+  needsRevision: boolean;
+  notes?: string;
+}
+
+export interface BehavioralStory {
+  id: string;
+  principle: string; // e.g. "Ownership", "Technical Disagreement", "Overcoming Failure"
+  title: string;
+  situation: string;
+  task: string;
+  action: string;
+  result: string;
+  keyMetrics: string;
+}
+
